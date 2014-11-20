@@ -4,6 +4,7 @@ require 'rouge'
 require 'fileutils'
 require 'pathname'
 require 'erb'
+require 'haml'
 
 require 'hologram/version'
 require 'hologram/plugin'

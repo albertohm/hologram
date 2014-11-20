@@ -174,7 +174,7 @@ module Hologram
           if page.has_key?(:erb)
             write_erb(file_name, page[:erb], tpl_vars.get_binding)
           else
-            write_page(file_name, markdown.render(page[:md]), tpl_vars.get_binding)
+            write_page(file_name, markdown.render(page[:md]), tpl_vars.get_binding, page[:blocks])
           end
         end
       end
@@ -188,35 +188,48 @@ module Hologram
       fh.close
     end
 
-    def write_page(file_name, body, binding)
+    def template_result(template,binding, blocks)
+      return false unless template
+      if template.kind_of? Haml::Engine
+        template.render_proc(Object.new, '@blocks').call '@blocks' => blocks
+      else
+        template.result(binding)
+      end
+    end
+
+    def write_page(file_name, body, binding, blocks = {})
       fh = get_fh(output_dir, file_name)
-      fh.write(header_erb.result(binding)) if header_erb
+      header = template_result(header_erb, binding, blocks)
+      fh.write(header) if header
       fh.write(body)
-      fh.write(footer_erb.result(binding)) if footer_erb
+      footer = template_result(footer_erb, binding, blocks)
+      fh.write(footer) if footer
     ensure
       fh.close
     end
 
+    def look_for_asset_file(name)
+      names = [name, "_#{name}"]
+      formats = {
+        haml: -> f { Haml::Engine.new f },
+        html: -> f { ERB.new f }
+      }
+      names.each do |file_name|
+        formats.each do |format, function|
+          path = "#{doc_assets_dir}/_#{file_name}.#{format}"
+          if File.exists? path
+            return function.call File.read(path)
+          end
+        end
+      end
+      DisplayMessage.warning("No _#{name}.html or haml found in documentation assets. Without this your css/header will not be included on the generated pages.")
+      nil
+    end
+
     def set_header_footer
       # load the markdown renderer we are going to use
-
-      if File.exists?("#{doc_assets_dir}/_header.html")
-        @header_erb = ERB.new(File.read("#{doc_assets_dir}/_header.html"))
-      elsif File.exists?("#{doc_assets_dir}/header.html")
-        @header_erb = ERB.new(File.read("#{doc_assets_dir}/header.html"))
-      else
-        @header_erb = nil
-        DisplayMessage.warning("No _header.html found in documentation assets. Without this your css/header will not be included on the generated pages.")
-      end
-
-      if File.exists?("#{doc_assets_dir}/_footer.html")
-        @footer_erb = ERB.new(File.read("#{doc_assets_dir}/_footer.html"))
-      elsif File.exists?("#{doc_assets_dir}/footer.html")
-        @footer_erb = ERB.new(File.read("#{doc_assets_dir}/footer.html"))
-      else
-        @footer_erb = nil
-        DisplayMessage.warning("No _footer.html found in documentation assets. This might be okay to ignore...")
-      end
+      @header_erb = look_for_asset_file('header')
+      @footer_erb = look_for_asset_file('footer')
     end
 
     def get_file_name(str)
